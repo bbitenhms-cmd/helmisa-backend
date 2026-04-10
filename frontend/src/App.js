@@ -2,6 +2,7 @@ import React from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import QRScanPage from './pages/QRScanPage';
+import QRRedirectPage from './pages/QRRedirectPage';
 import ProfileSetupPage from './pages/ProfileSetupPage';
 import LobbyPage from './pages/LobbyPage';
 import ChatPage from './pages/ChatPage';
@@ -41,6 +42,9 @@ function AppRoutes() {
   return (
     <Routes>
       <Route path="/" element={<QRScanPage />} />
+      
+      {/* QR Redirect - Gerçek QR kodlarından gelen link */}
+      <Route path="/qr/:cafeId/:tableNumber" element={<QRRedirectPage />} />
       
       <Route
         path="/profile-setup"

@@ -30,7 +30,7 @@ app = FastAPI(title="helMisa API", version="1.0.0")
 api_router = APIRouter(prefix="/api")
 
 # Import routes
-from routes import auth, cafe, request, chat
+from routes import auth, cafe, request, chat, admin
 
 # Basic routes
 @api_router.get("/")
@@ -45,6 +45,8 @@ async def health_check():
 api_router.include_router(auth.router)
 api_router.include_router(cafe.router)
 api_router.include_router(request.router)
+api_router.include_router(chat.router)
+api_router.include_router(admin.router)
 
 # Include the main router in the app
 app.include_router(api_router)
