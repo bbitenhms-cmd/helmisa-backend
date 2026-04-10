@@ -1,7 +1,11 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { QrReader } from 'react-qr-reader';
+
+// QR Reader constraints - component dışında tanımlandı (re-render optimizasyonu)
+const QR_CONSTRAINTS = { facingMode: 'environment' };
+const QR_STYLE = { width: '100%' };
 
 const QRScanPage = () => {
   const [scanning, setScanning] = useState(false);
@@ -103,10 +107,10 @@ const QRScanPage = () => {
             <div>
               <div className="mb-4">
                 <QrReader
-                  constraints={{ facingMode: 'environment' }}
+                  constraints={QR_CONSTRAINTS}
                   onResult={handleScan}
                   onError={handleError}
-                  style={{ width: '100%' }}
+                  style={QR_STYLE}
                 />
               </div>
               <p className="text-center text-gray-300 mb-4">

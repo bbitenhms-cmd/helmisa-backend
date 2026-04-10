@@ -43,7 +43,8 @@ const LobbyPage = () => {
     const interval = setInterval(loadTables, 5000);
 
     return () => clearInterval(interval);
-  }, [session, navigate]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [session]);
 
   const handleLogout = async () => {
     await logout();
@@ -115,4 +116,79 @@ const LobbyPage = () => {
             <div className="flex-1">
               <div className="text-white font-bold">Sensin! (Masa {session.table_number})</div>
               <div className="text-gray-300 text-sm">
-                {session.user.gender === 'male' ? 'Erkek' : session.user.gender === 'female' ? 'Kadın' : 'Diğer'} • \n                {session.user.age_range} • \n                {getGroupEmoji(session.user.group_type)} {session.user.group_type}\n              </div>\n            </div>\n          </div>\n        </div>\n      </div>\n\n      {/* Tables Grid */}\n      <div className="max-w-6xl mx-auto">\n        <h2 className="text-xl font-bold text-white mb-4">Cafe'deki Diğer Masalar</h2>\n        \n        {error && (\n          <div className="mb-4 p-4 bg-red-500/20 border border-red-500/50 rounded-xl">\n            <p className="text-red-300">{error}</p>\n          </div>\n        )}\n\n        {tables.length === 0 ? (\n          <div className="bg-white/10 backdrop-blur-lg rounded-2xl p-8 text-center border border-white/20">\n            <div className="text-6xl mb-4">👀</div>\n            <h3 className="text-xl font-bold text-white mb-2">Henüz kimse yok</h3>\n            <p className="text-gray-300">Başkaları geldiğinde burada görünecekler</p>\n          </div>\n        ) : (\n          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">\n            {tables.map((table) => (\n              <div\n                key={table.id}\n                className="bg-white/10 backdrop-blur-lg rounded-2xl p-6 shadow-xl border border-white/20 hover:border-purple-500/50 transition-all cursor-pointer hover:transform hover:scale-105"\n              >\n                {/* Vibe Badge */}\n                <div className="flex items-center gap-3 mb-4">\n                  <div className={`w-16 h-16 rounded-full bg-gradient-to-br ${getVibeColor(table.user.vibe)} flex items-center justify-center text-3xl shadow-lg`}>\n                    {getVibeEmoji(table.user.vibe)}\n                  </div>\n                  <div className="flex-1">\n                    <div className="text-white font-bold text-lg">Masa {table.table_number}</div>\n                    <div className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-semibold ${table.is_online ? 'bg-green-500/20 text-green-300' : 'bg-gray-500/20 text-gray-300'}`}>\n                      <div className={`w-2 h-2 rounded-full ${table.is_online ? 'bg-green-400' : 'bg-gray-400'}`} />\n                      {table.is_online ? 'Online' : 'Offline'}\n                    </div>\n                  </div>\n                </div>\n\n                {/* User Info */}\n                <div className="space-y-2">\n                  <div className="flex items-center gap-2 text-gray-300 text-sm">\n                    <span>{table.user.gender === 'male' ? '👨' : table.user.gender === 'female' ? '👩' : '🧑'}</span>\n                    <span>{table.user.age_range} yaş</span>\n                  </div>\n                  <div className="flex items-center gap-2 text-gray-300 text-sm">\n                    <span>{getGroupEmoji(table.user.group_type)}</span>\n                    <span>\n                      {table.user.group_type === 'solo' ? 'Yalnız' : \n                       table.user.group_type === 'couple' ? 'Çift' : \n                       'Arkadaşlarla'}\n                    </span>\n                  </div>\n                  <div className="flex items-center gap-2 text-gray-300 text-sm">\n                    <span>{getVibeEmoji(table.user.vibe)}</span>\n                    <span className="capitalize">{table.user.vibe}</span>\n                  </div>\n                </div>\n\n                {/* Action Button */}\n                <button className="w-full mt-4 bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600 text-white font-semibold py-2 px-4 rounded-xl transition-all shadow-lg">\n                  ☕ Kahve Teklif Et\n                </button>\n              </div>\n            ))}\n          </div>\n        )}\n      </div>\n    </div>\n  );\n};\n\nexport default LobbyPage;
+                {session.user.gender === 'male' ? 'Erkek' : session.user.gender === 'female' ? 'Kadın' : 'Diğer'} • {session.user.age_range} • {getGroupEmoji(session.user.group_type)} {session.user.group_type}
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Tables Grid */}
+      <div className="max-w-6xl mx-auto">
+        <h2 className="text-xl font-bold text-white mb-4">Cafe'deki Diğer Masalar</h2>
+        
+        {error && (
+          <div className="mb-4 p-4 bg-red-500/20 border border-red-500/50 rounded-xl">
+            <p className="text-red-300">{error}</p>
+          </div>
+        )}
+
+        {tables.length === 0 ? (
+          <div className="bg-white/10 backdrop-blur-lg rounded-2xl p-8 text-center border border-white/20">
+            <div className="text-6xl mb-4">👀</div>
+            <h3 className="text-xl font-bold text-white mb-2">Henüz kimse yok</h3>
+            <p className="text-gray-300">Başkaları geldiğinde burada görünecekler</p>
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {tables.map((table) => (
+              <div
+                key={table.id}
+                className="bg-white/10 backdrop-blur-lg rounded-2xl p-6 shadow-xl border border-white/20 hover:border-purple-500/50 transition-all cursor-pointer hover:transform hover:scale-105"
+              >
+                {/* Vibe Badge */}
+                <div className="flex items-center gap-3 mb-4">
+                  <div className={`w-16 h-16 rounded-full bg-gradient-to-br ${getVibeColor(table.user.vibe)} flex items-center justify-center text-3xl shadow-lg`}>
+                    {getVibeEmoji(table.user.vibe)}
+                  </div>
+                  <div className="flex-1">
+                    <div className="text-white font-bold text-lg">Masa {table.table_number}</div>
+                    <div className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-semibold ${table.is_online ? 'bg-green-500/20 text-green-300' : 'bg-gray-500/20 text-gray-300'}`}>
+                      <div className={`w-2 h-2 rounded-full ${table.is_online ? 'bg-green-400' : 'bg-gray-400'}`} />
+                      {table.is_online ? 'Online' : 'Offline'}
+                    </div>
+                  </div>
+                </div>
+
+                {/* User Info */}
+                <div className="space-y-2">
+                  <div className="flex items-center gap-2 text-gray-300 text-sm">
+                    <span>{table.user.gender === 'male' ? '👨' : table.user.gender === 'female' ? '👩' : '🧑'}</span>
+                    <span>{table.user.age_range} yaş</span>
+                  </div>
+                  <div className="flex items-center gap-2 text-gray-300 text-sm">
+                    <span>{getGroupEmoji(table.user.group_type)}</span>
+                    <span>
+                      {table.user.group_type === 'solo' ? 'Yalnız' : table.user.group_type === 'couple' ? 'Çift' : 'Arkadaşlarla'}
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-2 text-gray-300 text-sm">
+                    <span>{getVibeEmoji(table.user.vibe)}</span>
+                    <span className="capitalize">{table.user.vibe}</span>
+                  </div>
+                </div>
+
+                {/* Action Button */}
+                <button className="w-full mt-4 bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600 text-white font-semibold py-2 px-4 rounded-xl transition-all shadow-lg">
+                  ☕ Kahve Teklif Et
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
+
+export default LobbyPage;

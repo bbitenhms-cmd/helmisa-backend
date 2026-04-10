@@ -42,6 +42,7 @@ export const AuthProvider = ({ children }) => {
       stopHeartbeat();
       disconnectSocket();
     };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // QR ile giriş
