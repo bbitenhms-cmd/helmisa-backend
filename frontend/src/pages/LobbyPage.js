@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { cafeAPI } from '../services/api';
 import CoffeeRequestModal from '../components/CoffeeRequestModal';
+import RadarView from '../components/RadarView';
 
 const LobbyPage = () => {
   const [tables, setTables] = useState([]);
@@ -11,6 +12,7 @@ const LobbyPage = () => {
   const [error, setError] = useState(null);
   const [selectedUser, setSelectedUser] = useState(null);
   const [notification, setNotification] = useState(null);
+  const [activeTab, setActiveTab] = useState('tables'); // 'tables' or 'radar'
   const { session, logout } = useAuth();
   const navigate = useNavigate();
 
@@ -149,9 +151,38 @@ const LobbyPage = () => {
         </div>
       </div>
 
-      {/* Tables Grid */}
+      {/* Tabs */}
+      <div className="max-w-6xl mx-auto mb-6">
+        <div className="bg-white/10 backdrop-blur-lg rounded-2xl p-1 flex gap-2">
+          <button
+            onClick={() => setActiveTab('tables')}
+            className={`flex-1 py-3 px-6 rounded-xl font-semibold transition-all ${
+              activeTab === 'tables'
+                ? 'bg-gradient-to-r from-purple-500 to-pink-500 text-white shadow-lg'
+                : 'text-gray-300 hover:text-white'
+            }`}
+          >
+            📋 Masalar
+          </button>
+          <button
+            onClick={() => setActiveTab('radar')}
+            className={`flex-1 py-3 px-6 rounded-xl font-semibold transition-all ${
+              activeTab === 'radar'
+                ? 'bg-gradient-to-r from-purple-500 to-pink-500 text-white shadow-lg'
+                : 'text-gray-300 hover:text-white'
+            }`}
+          >
+            📡 Radar
+          </button>
+        </div>
+      </div>
+
+      {/* Content */}
       <div className="max-w-6xl mx-auto">
-        <h2 className="text-xl font-bold text-white mb-4">Cafe'deki Diğer Masalar</h2>
+        {activeTab === 'tables' ? (
+          // Tables View
+          <div>
+            <h2 className="text-xl font-bold text-white mb-4">Cafe'deki Diğer Masalar</h2>
         
         {error && (
           <div className="mb-4 p-4 bg-red-500/20 border border-red-500/50 rounded-xl">
@@ -213,6 +244,17 @@ const LobbyPage = () => {
                 </button>
               </div>
             ))}
+          </div>
+        )}
+      </div>
+        ) : (
+          // Radar View
+          <div className="bg-white/5 backdrop-blur-lg rounded-2xl p-8 border border-white/10" style={{ minHeight: '500px' }}>
+            <RadarView
+              users={tables}
+              currentUser={session}
+              onUserClick={(user) => setSelectedUser(user)}
+            />
           </div>
         )}
       </div>
