@@ -50,4 +50,13 @@ export const cafeAPI = {
   getTables: (cafeId) => api.get(`/cafes/${cafeId}/tables`),
 };
 
+// REQUEST APIs
+export const requestAPI = {
+  send: (toSessionId) => api.post('/requests/send', { to_session_id: toSessionId }),
+  getIncoming: () => api.get('/requests/incoming'),
+  getOutgoing: () => api.get('/requests/outgoing'),
+  accept: (requestId) => api.post(`/requests/${requestId}/accept`),
+  reject: (requestId) => api.post(`/requests/${requestId}/reject`),
+};
+
 export default api;

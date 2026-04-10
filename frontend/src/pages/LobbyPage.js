@@ -2,12 +2,15 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { cafeAPI } from '../services/api';
+import CoffeeRequestModal from '../components/CoffeeRequestModal';
 
 const LobbyPage = () => {
   const [tables, setTables] = useState([]);
   const [cafeInfo, setCafeInfo] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [selectedUser, setSelectedUser] = useState(null);
+  const [notification, setNotification] = useState(null);
   const { session, logout } = useAuth();
   const navigate = useNavigate();
 
@@ -49,6 +52,29 @@ const LobbyPage = () => {
   const handleLogout = async () => {
     await logout();
     navigate('/');
+  };
+
+  const handleRequestSuccess = (result) => {
+    if (result.type === 'match') {
+      // MATCH!
+      setNotification({
+        type: 'success',
+        message: `🎉 ${result.message}`,
+        action: () => navigate(`/chat/${result.chatId}`)
+      });
+    } else {
+      // Normal send
+      setNotification({
+        type: 'info',
+        message: '✅ Kahve teklifi gönderildi!'
+      });
+    }
+    
+    // Masaları yenile
+    loadTables();
+    
+    // 5 saniye sonra notification'ı kapat
+    setTimeout(() => setNotification(null), 5000);
   };
 
   const getVibeColor = (vibe) => {
@@ -179,7 +205,10 @@ const LobbyPage = () => {
                 </div>
 
                 {/* Action Button */}
-                <button className="w-full mt-4 bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600 text-white font-semibold py-2 px-4 rounded-xl transition-all shadow-lg">
+                <button 
+                  onClick={() => setSelectedUser(table)}
+                  className="w-full mt-4 bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600 text-white font-semibold py-2 px-4 rounded-xl transition-all shadow-lg"
+                >
                   ☕ Kahve Teklif Et
                 </button>
               </div>
@@ -187,6 +216,36 @@ const LobbyPage = () => {
           </div>
         )}
       </div>
+
+      {/* Coffee Request Modal */}
+      {selectedUser && (
+        <CoffeeRequestModal
+          targetUser={selectedUser}
+          onClose={() => setSelectedUser(null)}
+          onSuccess={handleRequestSuccess}
+        />
+      )}
+
+      {/* Notification */}
+      {notification && (
+        <div className="fixed top-4 right-4 z-50 animate-slide-in">
+          <div className={`p-4 rounded-xl shadow-2xl border ${
+            notification.type === 'success' 
+              ? 'bg-green-500/20 border-green-500/50' 
+              : 'bg-blue-500/20 border-blue-500/50'
+          }`}>
+            <p className="text-white font-semibold">{notification.message}</p>
+            {notification.action && (
+              <button
+                onClick={notification.action}
+                className="mt-2 text-sm text-white underline"
+              >
+                Chat'e Git →
+              </button>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 };
