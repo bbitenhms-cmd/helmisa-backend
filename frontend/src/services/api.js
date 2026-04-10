@@ -59,4 +59,14 @@ export const requestAPI = {
   reject: (requestId) => api.post(`/requests/${requestId}/reject`),
 };
 
+// CHAT APIs
+export const chatAPI = {
+  getMyChats: () => api.get('/chats/my-chats'),
+  getChat: (chatId) => api.get(`/chats/${chatId}`),
+  getMessages: (chatId, limit = 50) => api.get(`/chats/${chatId}/messages`, { params: { limit } }),
+  sendMessage: (chatId, content, type = 'text', metadata = null) => 
+    api.post(`/chats/${chatId}/messages`, { content, type, metadata }),
+  closeChat: (chatId) => api.post(`/chats/${chatId}/close`),
+};
+
 export default api;

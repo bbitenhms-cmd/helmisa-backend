@@ -4,6 +4,7 @@ import { AuthProvider, useAuth } from './context/AuthContext';
 import QRScanPage from './pages/QRScanPage';
 import ProfileSetupPage from './pages/ProfileSetupPage';
 import LobbyPage from './pages/LobbyPage';
+import ChatPage from './pages/ChatPage';
 import './App.css';
 
 // Protected Route - giriş yapmış kullanıcılar için
@@ -56,6 +57,17 @@ function AppRoutes() {
           <ProtectedRoute>
             <ProfileRoute>
               <LobbyPage />
+            </ProfileRoute>
+          </ProtectedRoute>
+        }
+      />
+
+      <Route
+        path="/chat/:chatId"
+        element={
+          <ProtectedRoute>
+            <ProfileRoute>
+              <ChatPage />
             </ProfileRoute>
           </ProtectedRoute>
         }

@@ -30,7 +30,7 @@ app = FastAPI(title="helMisa API", version="1.0.0")
 api_router = APIRouter(prefix="/api")
 
 # Import routes
-from routes import auth, cafe, request
+from routes import auth, cafe, request, chat
 
 # Basic routes
 @api_router.get("/")
@@ -87,6 +87,68 @@ async def heartbeat(sid, data):
     """
     # TODO: Update last_heartbeat in session
     await sio.emit('heartbeat_ack', {'timestamp': data.get('timestamp')}, room=sid)
+
+@sio.event
+async def join_chat(sid, data):
+    """
+    Kullanıcı bir chat odasına katılır
+    """
+    chat_id = data.get('chat_id')
+    await sio.enter_room(sid, f"chat_{chat_id}")
+    logging.info(f"User {sid} joined chat room: chat_{chat_id}")
+
+@sio.event
+async def leave_chat(sid, data):
+    """
+    Kullanıcı chat odasından ayrılır
+    """
+    chat_id = data.get('chat_id')
+    await sio.leave_room(sid, f"chat_{chat_id}")
+    logging.info(f"User {sid} left chat room: chat_{chat_id}")
+
+@sio.event
+async def send_message(sid, data):
+    """
+    Mesaj gönder (WebSocket üzerinden)
+    """
+    chat_id = data.get('chat_id')
+    message = data.get('message')
+    
+    # Odadaki herkese gönder
+    await sio.emit('new_message', {
+        'chat_id': chat_id,
+        'message': message
+    }, room=f"chat_{chat_id}", skip_sid=sid)
+    
+    logging.info(f"Message sent in chat {chat_id}")
+
+@sio.event
+async def typing_start(sid, data):
+    """
+    Kullanıcı yazmaya başladı
+    """
+    chat_id = data.get('chat_id')
+    sender_id = data.get('sender_id')
+    
+    await sio.emit('user_typing', {
+        'chat_id': chat_id,
+        'sender_id': sender_id,
+        'typing': True
+    }, room=f"chat_{chat_id}", skip_sid=sid)
+
+@sio.event
+async def typing_stop(sid, data):
+    """
+    Kullanıcı yazmayı bıraktı
+    """
+    chat_id = data.get('chat_id')
+    sender_id = data.get('sender_id')
+    
+    await sio.emit('user_typing', {
+        'chat_id': chat_id,
+        'sender_id': sender_id,
+        'typing': False
+    }, room=f"chat_{chat_id}", skip_sid=sid)
 
 # Combine FastAPI and Socket.IO
 socket_app = socketio.ASGIApp(sio, app)
