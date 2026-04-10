@@ -1,15 +1,11 @@
 from fastapi import FastAPI, APIRouter
+from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv
-from starlette.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
+import socketio
 import os
 import logging
 from pathlib import Path
-from pydantic import BaseModel, Field, ConfigDict
-from typing import List
-import uuid
-from datetime import datetime, timezone
-
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
@@ -19,56 +15,40 @@ mongo_url = os.environ['MONGO_URL']
 client = AsyncIOMotorClient(mongo_url)
 db = client[os.environ['DB_NAME']]
 
-# Create the main app without a prefix
-app = FastAPI()
+# Create Socket.IO server
+sio = socketio.AsyncServer(
+    async_mode='asgi',
+    cors_allowed_origins='*',
+    logger=True,
+    engineio_logger=True
+)
+
+# Create the main FastAPI app
+app = FastAPI(title="helMisa API", version="1.0.0")
 
 # Create a router with the /api prefix
 api_router = APIRouter(prefix="/api")
 
+# Import routes
+from routes import auth, cafe
 
-# Define Models
-class StatusCheck(BaseModel):
-    model_config = ConfigDict(extra="ignore")  # Ignore MongoDB's _id field
-    
-    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
-    client_name: str
-    timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
-
-class StatusCheckCreate(BaseModel):
-    client_name: str
-
-# Add your routes to the router instead of directly to app
+# Basic routes
 @api_router.get("/")
 async def root():
-    return {"message": "Hello World"}
+    return {"message": "helMisa API is running", "version": "1.0.0"}
 
-@api_router.post("/status", response_model=StatusCheck)
-async def create_status_check(input: StatusCheckCreate):
-    status_dict = input.model_dump()
-    status_obj = StatusCheck(**status_dict)
-    
-    # Convert to dict and serialize datetime to ISO string for MongoDB
-    doc = status_obj.model_dump()
-    doc['timestamp'] = doc['timestamp'].isoformat()
-    
-    _ = await db.status_checks.insert_one(doc)
-    return status_obj
+@api_router.get("/health")
+async def health_check():
+    return {"status": "healthy", "database": "connected"}
 
-@api_router.get("/status", response_model=List[StatusCheck])
-async def get_status_checks():
-    # Exclude MongoDB's _id field from the query results
-    status_checks = await db.status_checks.find({}, {"_id": 0}).to_list(1000)
-    
-    # Convert ISO string timestamps back to datetime objects
-    for check in status_checks:
-        if isinstance(check['timestamp'], str):
-            check['timestamp'] = datetime.fromisoformat(check['timestamp'])
-    
-    return status_checks
+# Include routers
+api_router.include_router(auth.router)
+api_router.include_router(cafe.router)
 
-# Include the router in the main app
+# Include the main router in the app
 app.include_router(api_router)
 
+# CORS middleware
 app.add_middleware(
     CORSMiddleware,
     allow_credentials=True,
@@ -77,6 +57,39 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Socket.IO event handlers
+@sio.event
+async def connect(sid, environ):
+    logging.info(f"Client connected: {sid}")
+    await sio.emit('connected', {'message': 'Connected to helMisa'}, room=sid)
+
+@sio.event
+async def disconnect(sid):
+    logging.info(f"Client disconnected: {sid}")
+    # Handle user going offline
+    # TODO: Update session status to offline
+
+@sio.event
+async def authenticate(sid, data):
+    """
+    Client sends JWT token to authenticate
+    """
+    token = data.get('token')
+    # TODO: Verify token and link socket to session
+    logging.info(f"Authentication request from {sid}")
+    await sio.emit('authenticated', {'success': True}, room=sid)
+
+@sio.event
+async def heartbeat(sid, data):
+    """
+    Client sends heartbeat every 30 seconds
+    """
+    # TODO: Update last_heartbeat in session
+    await sio.emit('heartbeat_ack', {'timestamp': data.get('timestamp')}, room=sid)
+
+# Combine FastAPI and Socket.IO
+socket_app = socketio.ASGIApp(sio, app)
+
 # Configure logging
 logging.basicConfig(
     level=logging.INFO,
@@ -84,6 +97,28 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+@app.on_event("startup")
+async def startup_event():
+    logger.info("🚀 helMisa backend starting...")
+    logger.info(f"📊 Database: {os.environ['DB_NAME']}")
+    logger.info(f"🌐 CORS Origins: {os.environ.get('CORS_ORIGINS', '*')}")
+    
+    # Initialize default cafe if not exists
+    existing_cafe = await db.cafes.find_one({"name": "helMisa Demo"})
+    if not existing_cafe:
+        demo_cafe = {
+            "id": "demo-cafe-001",
+            "name": "helMisa Demo",
+            "address": "Demo Location",
+            "table_count": 20,
+            "location": {"lat": 40.9887, "lng": 29.0258},
+            "qr_base_url": f"{os.environ.get('FRONTEND_URL', 'http://localhost:3000')}/qr/",
+            "is_active": True
+        }
+        await db.cafes.insert_one(demo_cafe)
+        logger.info("✅ Demo cafe created")
+
 @app.on_event("shutdown")
 async def shutdown_db_client():
     client.close()
+    logger.info("👋 helMisa backend shutting down...")

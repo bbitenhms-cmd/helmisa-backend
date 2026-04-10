@@ -1,53 +1,79 @@
-import { useEffect } from "react";
-import "@/App.css";
-import { BrowserRouter, Routes, Route } from "react-router-dom";
-import axios from "axios";
+import React from 'react';
+import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { AuthProvider, useAuth } from './context/AuthContext';
+import QRScanPage from './pages/QRScanPage';
+import ProfileSetupPage from './pages/ProfileSetupPage';
+import LobbyPage from './pages/LobbyPage';
+import './App.css';
 
-const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
-const API = `${BACKEND_URL}/api`;
+// Protected Route - giriş yapmış kullanıcılar için
+const ProtectedRoute = ({ children }) => {
+  const { isAuthenticated, loading } = useAuth();
 
-const Home = () => {
-  const helloWorldApi = async () => {
-    try {
-      const response = await axios.get(`${API}/`);
-      console.log(response.data.message);
-    } catch (e) {
-      console.error(e, `errored out requesting / api`);
-    }
-  };
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-gray-900 via-purple-900 to-gray-900 flex items-center justify-center">
+        <div className="text-white text-xl">Yükleniyor...</div>
+      </div>
+    );
+  }
 
-  useEffect(() => {
-    helloWorldApi();
-  }, []);
-
-  return (
-    <div>
-      <header className="App-header">
-        <a
-          className="App-link"
-          href="https://emergent.sh"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <img src="https://avatars.githubusercontent.com/in/1201222?s=120&u=2686cf91179bbafbc7a71bfbc43004cf9ae1acea&v=4" />
-        </a>
-        <p className="mt-5">Building something incredible ~!</p>
-      </header>
-    </div>
-  );
+  return isAuthenticated ? children : <Navigate to="/" replace />;
 };
+
+// Profile Route - profil oluşturmuş kullanıcılar için
+const ProfileRoute = ({ children }) => {
+  const { hasProfile, loading } = useAuth();
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-gray-900 via-purple-900 to-gray-900 flex items-center justify-center">
+        <div className="text-white text-xl">Yükleniyor...</div>
+      </div>
+    );
+  }
+
+  return hasProfile ? children : <Navigate to="/profile-setup" replace />;
+};
+
+function AppRoutes() {
+  return (
+    <Routes>
+      <Route path="/" element={<QRScanPage />} />
+      
+      <Route
+        path="/profile-setup"
+        element={
+          <ProtectedRoute>
+            <ProfileSetupPage />
+          </ProtectedRoute>
+        }
+      />
+      
+      <Route
+        path="/lobby"
+        element={
+          <ProtectedRoute>
+            <ProfileRoute>
+              <LobbyPage />
+            </ProfileRoute>
+          </ProtectedRoute>
+        }
+      />
+
+      {/* 404 - Sayfa bulunamadı */}
+      <Route path="*" element={<Navigate to="/" replace />} />
+    </Routes>
+  );
+}
 
 function App() {
   return (
-    <div className="App">
+    <AuthProvider>
       <BrowserRouter>
-        <Routes>
-          <Route path="/" element={<Home />}>
-            <Route index element={<Home />} />
-          </Route>
-        </Routes>
+        <AppRoutes />
       </BrowserRouter>
-    </div>
+    </AuthProvider>
   );
 }
 
