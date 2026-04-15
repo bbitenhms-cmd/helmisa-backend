@@ -11,6 +11,7 @@ const QRScanPage = () => {
   const [scanning, setScanning] = useState(false);
   const [error, setError] = useState(null);
   const [loading, setLoading] = useState(false);
+  const [selectedTable, setSelectedTable] = useState(5); // Demo için masa seçimi
   const navigate = useNavigate();
   const { login } = useAuth();
 
@@ -139,23 +140,48 @@ const QRScanPage = () => {
         </div>
 
         {/* Demo Button (Test için) */}
-        <div className="mt-6 text-center">
-          <button
-            onClick={async () => {
-              setLoading(true);
-              try {
-                await login('demo-cafe-001', 5, null);
-                navigate('/profile-setup');
-              } catch (err) {
-                setError(err.response?.data?.detail || 'Giriş başarısız');
-                setLoading(false);
-              }
-            }}
-            disabled={loading}
-            className="text-purple-300 hover:text-purple-200 text-sm underline"
-          >
-            Demo: Masa 5 olarak giriş yap
-          </button>
+        <div className="mt-6">
+          <div className="bg-white/10 backdrop-blur-lg rounded-2xl p-6 border border-white/20">
+            <h3 className="text-white font-semibold mb-3 text-center">Demo Test</h3>
+            <p className="text-gray-300 text-sm mb-4 text-center">QR kod olmadan test etmek için masa numaranızı seçin</p>
+            
+            {/* Masa Seçici */}
+            <div className="mb-4">
+              <label className="block text-gray-300 text-sm font-medium mb-2">
+                Hangi masadasınız?
+              </label>
+              <select
+                value={selectedTable}
+                onChange={(e) => setSelectedTable(parseInt(e.target.value))}
+                className="w-full bg-white/10 border border-white/20 text-white rounded-xl px-4 py-3 focus:outline-none focus:ring-2 focus:ring-purple-500"
+              >
+                {[...Array(20)].map((_, i) => (
+                  <option key={i + 1} value={i + 1} className="bg-gray-800">
+                    Masa {i + 1}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            {/* Demo Giriş Butonu */}
+            <button
+              onClick={async () => {
+                setLoading(true);
+                setError(null);
+                try {
+                  await login('demo-cafe-001', selectedTable, null);
+                  navigate('/profile-setup');
+                } catch (err) {
+                  setError(err.response?.data?.detail || 'Giriş başarısız');
+                  setLoading(false);
+                }
+              }}
+              disabled={loading}
+              className="w-full bg-gradient-to-r from-blue-500 to-cyan-500 text-white font-semibold py-3 px-6 rounded-xl hover:from-blue-600 hover:to-cyan-600 transition-all shadow-lg disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {loading ? 'Giriş yapılıyor...' : `Masa ${selectedTable} olarak Giriş Yap`}
+            </button>
+          </div>
         </div>
       </div>
     </div>
