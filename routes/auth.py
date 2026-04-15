@@ -133,11 +133,12 @@ async def get_me(current_session: Session = Depends(get_current_session)):
 @router.post("/logout")
 async def logout(current_session: Session = Depends(get_current_session)):
     """
-    Oturumu kapat
+    Oturumu kapat - Session'ı DB'den tamamen sil
     """
-    await db.sessions.update_one(
-        {"id": current_session.id},
-        {"$set": {"is_online": False}}
-    )
+    # Session'ı tamamen sil (tekrar giriş yapabilmek için)
+    result = await db.sessions.delete_one({"id": current_session.id})
     
-    return {"message": "Logged out successfully"}
+    if result.deleted_count == 0:
+        raise HTTPException(status_code=404, detail="Session not found")
+    
+    return {"message": "Logged out successfully", "deleted": True}
