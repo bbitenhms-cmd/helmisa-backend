@@ -99,6 +99,29 @@ async def send_request(data: RequestCreate, current_session = Depends(get_curren
         
         logger.info(f"MATCH created: {match.id} between {current_session.id} and {data.to_session_id}")
         
+        # Socket.io ile her iki tarafa da bildirim gönder
+        from server import sio
+        
+        # Her iki session'ın socket_id'sini al
+        from_socket = current_session.socket_id
+        to_socket = target_session.get("socket_id")
+        
+        if from_socket:
+            await sio.emit('match_created', {
+                'match_id': match.id,
+                'chat_id': chat.id,
+                'message': "It's a match! 🎉",
+                'other_table': target_session["table_number"]
+            }, room=from_socket)
+        
+        if to_socket:
+            await sio.emit('match_created', {
+                'match_id': match.id,
+                'chat_id': chat.id,
+                'message': "It's a match! 🎉",
+                'other_table': current_session.table_number
+            }, room=to_socket)
+        
         return {
             "request": request,
             "status": "matched",
@@ -106,6 +129,23 @@ async def send_request(data: RequestCreate, current_session = Depends(get_curren
             "chat_id": chat.id,
             "message": "It's a match! 🎉"
         }
+    
+    # Karşı tarafa socket.io ile bildirim gönder
+    from server import sio
+    
+    target_socket_id = target_session.get("socket_id")
+    if target_socket_id:
+        # Gönderen bilgilerini ekle
+        await sio.emit('coffee_request', {
+            'id': request.id,
+            'from_session_id': current_session.id,
+            'from_table': current_session.table_number,
+            'from_user': current_session.user,
+            'expires_at': request.expires_at.isoformat()
+        }, room=target_socket_id)
+        logger.info(f"☕ Coffee request sent to socket {target_socket_id}")
+    else:
+        logger.warning(f"Target session {data.to_session_id} has no socket_id - notification not sent")
     
     return {
         "request": request,
