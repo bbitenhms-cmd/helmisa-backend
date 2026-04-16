@@ -83,6 +83,7 @@ const LobbyPage = () => {
       stopHeartbeat();
       disconnectSocket();
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [session?.token]);
 
   const handleLogout = async () => {
