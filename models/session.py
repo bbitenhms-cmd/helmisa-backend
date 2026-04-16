@@ -24,7 +24,7 @@ class Session(BaseModel):
     token: Optional[str] = None
     socket_id: Optional[str] = None
     created_at: datetime = Field(default_factory=datetime.utcnow)
-    expires_at: datetime = Field(default_factory=lambda: datetime.utcnow() + timedelta(hours=6))
+    expires_at: datetime = Field(default_factory=lambda: datetime.utcnow() + timedelta(minutes=10))
 
 class SessionCreate(BaseModel):
     cafe_id: str

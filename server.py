@@ -68,19 +68,44 @@ async def connect(sid, environ):
 
 @sio.event
 async def disconnect(sid):
+    """
+    Tarayıcı kapatıldığında veya bağlantı koptuğunda
+    Session'ı otomatik sil (10 dakika sonra zaten expire olacak ama hemen sil)
+    """
     logging.info(f"Client disconnected: {sid}")
-    # Handle user going offline
-    # TODO: Update session status to offline
+    
+    # socket_id'ye göre session bul ve sil
+    try:
+        result = await db.sessions.delete_one({"socket_id": sid})
+        if result.deleted_count > 0:
+            logging.info(f"✅ Session deleted for socket {sid}")
+    except Exception as e:
+        logging.error(f"Error deleting session on disconnect: {e}")
 
 @sio.event
 async def authenticate(sid, data):
     """
-    Client sends JWT token to authenticate
+    Client sends JWT token to authenticate - socket_id'yi session'a kaydet
     """
     token = data.get('token')
-    # TODO: Verify token and link socket to session
-    logging.info(f"Authentication request from {sid}")
-    await sio.emit('authenticated', {'success': True}, room=sid)
+    
+    try:
+        # Token'dan session_id al
+        from utils.auth import verify_token
+        payload = verify_token(token)
+        session_id = payload.get('session_id')
+        
+        # Session'ı güncelle - socket_id ekle
+        await db.sessions.update_one(
+            {"id": session_id},
+            {"$set": {"socket_id": sid}}
+        )
+        
+        logging.info(f"✅ Socket {sid} authenticated for session {session_id}")
+        await sio.emit('authenticated', {'success': True}, room=sid)
+    except Exception as e:
+        logging.error(f"Authentication failed: {e}")
+        await sio.emit('authenticated', {'success': False, 'error': str(e)}, room=sid)
 
 @sio.event
 async def heartbeat(sid, data):
