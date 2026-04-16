@@ -3,7 +3,9 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { cafeAPI } from '../services/api';
 import CoffeeRequestModal from '../components/CoffeeRequestModal';
+import IncomingRequestModal from '../components/IncomingRequestModal';
 import RadarView from '../components/RadarView';
+import { getSocket, initSocket, disconnectSocket, startHeartbeat, stopHeartbeat } from '../services/socket';
 
 const LobbyPage = () => {
   const [tables, setTables] = useState([]);
@@ -11,6 +13,7 @@ const LobbyPage = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [selectedUser, setSelectedUser] = useState(null);
+  const [incomingRequest, setIncomingRequest] = useState(null); // Gelen kahve teklifi
   const [notification, setNotification] = useState(null);
   const [activeTab, setActiveTab] = useState('tables'); // 'tables' or 'radar'
   const { session, logout } = useAuth();
@@ -51,9 +54,70 @@ const LobbyPage = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [session]);
 
+  // Socket.io initialization
+  useEffect(() => {
+    if (!session?.token) return;
+
+    const socket = initSocket(session.token);
+    startHeartbeat();
+
+    // Kahve teklifi geldiğinde
+    socket.on('coffee_request', (data) => {
+      console.log('☕ Kahve teklifi geldi:', data);
+      setIncomingRequest(data);
+    });
+
+    // Match olduğunda
+    socket.on('match_created', (data) => {
+      console.log('🎉 Match!', data);
+      setNotification({
+        type: 'match',
+        message: `🎉 ${data.message || 'Eşleşme gerçekleşti!'}`,
+        chatId: data.chat_id
+      });
+      loadTables(); // Masaları yenile
+    });
+
+    // Cleanup
+    return () => {
+      stopHeartbeat();
+      disconnectSocket();
+    };
+  }, [session?.token]);
+
   const handleLogout = async () => {
     await logout();
     navigate('/');
+  };
+
+  // Gelen kahve teklifini kabul et
+  const handleAcceptRequest = (matchData) => {
+    setIncomingRequest(null); // Modal'ı kapat
+    
+    // Match oluştuysa chat'e yönlendir
+    if (matchData?.chat_id) {
+      setNotification({
+        type: 'match',
+        message: '🎉 Eşleşme gerçekleşti! Chat açılıyor...',
+        chatId: matchData.chat_id
+      });
+      
+      // 2 saniye sonra chat'e yönlendir
+      setTimeout(() => {
+        navigate(`/chat/${matchData.chat_id}`);
+      }, 2000);
+    }
+    
+    loadTables();
+  };
+
+  // Gelen kahve teklifini reddet
+  const handleRejectRequest = () => {
+    setIncomingRequest(null); // Modal'ı kapat
+    setNotification({
+      type: 'info',
+      message: 'Kahve teklifi reddedildi'
+    });
   };
 
   const handleRequestSuccess = (result) => {
@@ -287,6 +351,15 @@ const LobbyPage = () => {
             )}
           </div>
         </div>
+      )}
+
+      {/* Gelen Kahve Teklifi Modal */}
+      {incomingRequest && (
+        <IncomingRequestModal
+          request={incomingRequest}
+          onAccept={handleAcceptRequest}
+          onReject={handleRejectRequest}
+        />
       )}
     </div>
   );
