@@ -57,10 +57,23 @@ async def qr_login(data: SessionCreate):
         raise HTTPException(status_code=400, detail=f"Invalid table number. Must be between 1 and {cafe['table_count']}")
     
     # Bu masada zaten aktif session var mı?
+    # Expired session'ları otomatik temizle
+    from datetime import datetime, timezone
+    now = datetime.now(timezone.utc)
+    
+    # Expired session'ları sil
+    await db.sessions.delete_many({
+        "cafe_id": data.cafe_id,
+        "table_number": data.table_number,
+        "expires_at": {"$lt": now.isoformat()}
+    })
+    
+    # Aktif ve geçerli session var mı kontrol et
     existing_session = await db.sessions.find_one({
         "cafe_id": data.cafe_id,
         "table_number": data.table_number,
-        "is_online": True
+        "is_online": True,
+        "expires_at": {"$gt": now.isoformat()}
     })
     
     if existing_session:
