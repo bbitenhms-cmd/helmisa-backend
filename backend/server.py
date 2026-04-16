@@ -111,8 +111,17 @@ async def authenticate(sid, data):
 async def heartbeat(sid, data):
     """
     Client sends heartbeat every 30 seconds
+    Update last_heartbeat but NOT expires_at (session must expire in 10 min)
     """
-    # TODO: Update last_heartbeat in session
+    from datetime import datetime, timezone
+    try:
+        await db.sessions.update_one(
+            {"socket_id": sid},
+            {"$set": {"last_heartbeat": datetime.now(timezone.utc).isoformat()}}
+        )
+    except Exception as e:
+        logging.error(f"Heartbeat update error: {e}")
+    
     await sio.emit('heartbeat_ack', {'timestamp': data.get('timestamp')}, room=sid)
 
 @sio.event
