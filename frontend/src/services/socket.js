@@ -9,22 +9,37 @@ export const initSocket = (token) => {
     socket.disconnect();
   }
 
+  console.log('🔌 [Socket] Initializing connection to', BACKEND_URL);
+
   socket = io(BACKEND_URL, {
     auth: { token },
     transports: ['websocket', 'polling'],
   });
 
   socket.on('connect', () => {
-    console.log('✅ Socket connected:', socket.id);
+    console.log('✅ [Socket] Connected! Socket ID:', socket.id);
+    console.log('🔐 [Socket] Sending authenticate event with token...');
     socket.emit('authenticate', { token });
   });
 
   socket.on('disconnect', () => {
-    console.log('❌ Socket disconnected');
+    console.log('❌ [Socket] Disconnected');
   });
 
   socket.on('authenticated', (data) => {
-    console.log('✅ Authenticated:', data);
+    if (data.success) {
+      console.log('✅ [Socket] Authentication SUCCESS!', data);
+    } else {
+      console.error('❌ [Socket] Authentication FAILED!', data);
+    }
+  });
+  
+  socket.on('coffee_request', (data) => {
+    console.log('☕ [Socket] Coffee request event received!', data);
+  });
+  
+  socket.on('match_created', (data) => {
+    console.log('🎉 [Socket] Match created event received!', data);
   });
 
   return socket;

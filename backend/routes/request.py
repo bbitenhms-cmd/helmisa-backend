@@ -143,9 +143,9 @@ async def send_request(data: RequestCreate, current_session = Depends(get_curren
             'from_user': current_session.user,
             'expires_at': request.expires_at.isoformat()
         }, room=target_socket_id)
-        logger.info(f"☕ Coffee request sent to socket {target_socket_id}")
+        logger.info(f"☕ Coffee request sent to socket {target_socket_id} (session: {data.to_session_id})")
     else:
-        logger.warning(f"Target session {data.to_session_id} has no socket_id - notification not sent")
+        logger.warning(f"⚠️ Target session {data.to_session_id} has no socket_id - notification not sent")
     
     return {
         "request": request,

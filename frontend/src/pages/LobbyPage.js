@@ -5,7 +5,6 @@ import { cafeAPI } from '../services/api';
 import CoffeeRequestModal from '../components/CoffeeRequestModal';
 import IncomingRequestModal from '../components/IncomingRequestModal';
 import RadarView from '../components/RadarView';
-import { getSocket, initSocket, disconnectSocket, startHeartbeat, stopHeartbeat } from '../services/socket';
 
 const LobbyPage = () => {
   const [tables, setTables] = useState([]);
@@ -13,10 +12,9 @@ const LobbyPage = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [selectedUser, setSelectedUser] = useState(null);
-  const [incomingRequest, setIncomingRequest] = useState(null); // Gelen kahve teklifi
   const [notification, setNotification] = useState(null);
   const [activeTab, setActiveTab] = useState('tables'); // 'tables' or 'radar'
-  const { session, logout } = useAuth();
+  const { session, logout, incomingRequest, setIncomingRequest, matchNotification, setMatchNotification } = useAuth();
   const navigate = useNavigate();
 
   // Masaları yükle
@@ -54,37 +52,19 @@ const LobbyPage = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [session]);
 
-  // Socket.io initialization
+  // Match notification geldiğinde işle
   useEffect(() => {
-    if (!session?.token) return;
-
-    const socket = initSocket(session.token);
-    startHeartbeat();
-
-    // Kahve teklifi geldiğinde
-    socket.on('coffee_request', (data) => {
-      console.log('☕ Kahve teklifi geldi:', data);
-      setIncomingRequest(data);
-    });
-
-    // Match olduğunda
-    socket.on('match_created', (data) => {
-      console.log('🎉 Match!', data);
-      setNotification({
-        type: 'match',
-        message: `🎉 ${data.message || 'Eşleşme gerçekleşti!'}`,
-        chatId: data.chat_id
-      });
+    if (matchNotification) {
+      setNotification(matchNotification);
       loadTables(); // Masaları yenile
-    });
-
-    // Cleanup
-    return () => {
-      stopHeartbeat();
-      disconnectSocket();
-    };
+      
+      // 3 saniye sonra temizle
+      setTimeout(() => {
+        setMatchNotification(null);
+      }, 3000);
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [session?.token]);
+  }, [matchNotification]);
 
   const handleLogout = async () => {
     await logout();

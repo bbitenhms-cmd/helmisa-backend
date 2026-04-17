@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { authAPI } from '../services/api';
-import { initSocket, disconnectSocket, startHeartbeat, stopHeartbeat } from '../services/socket';
+import { initSocket, disconnectSocket, startHeartbeat, stopHeartbeat, getSocket } from '../services/socket';
 
 const AuthContext = createContext();
 
@@ -16,6 +16,40 @@ export const AuthProvider = ({ children }) => {
   const [session, setSession] = useState(null);
   const [token, setToken] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [incomingRequest, setIncomingRequest] = useState(null);
+  const [matchNotification, setMatchNotification] = useState(null);
+
+  // Socket event listener'larını kur
+  useEffect(() => {
+    if (!token) return;
+
+    const socket = getSocket();
+    if (!socket) return;
+
+    // Kahve teklifi geldiğinde
+    const handleCoffeeRequest = (data) => {
+      console.log('☕ [AuthContext] Kahve teklifi geldi:', data);
+      setIncomingRequest(data);
+    };
+
+    // Match olduğunda
+    const handleMatchCreated = (data) => {
+      console.log('🎉 [AuthContext] Match!', data);
+      setMatchNotification({
+        type: 'match',
+        message: `🎉 ${data.message || 'Eşleşme gerçekleşti!'}`,
+        chatId: data.chat_id
+      });
+    };
+
+    socket.on('coffee_request', handleCoffeeRequest);
+    socket.on('match_created', handleMatchCreated);
+
+    return () => {
+      socket.off('coffee_request', handleCoffeeRequest);
+      socket.off('match_created', handleMatchCreated);
+    };
+  }, [token]);
 
   // Sayfa yüklendiğinde token varsa session'ı yükle
   useEffect(() => {
@@ -28,8 +62,17 @@ export const AuthProvider = ({ children }) => {
         setSession(JSON.parse(savedSession));
         
         // Socket bağlantısını başlat
-        initSocket(savedToken);
+        const socket = initSocket(savedToken);
         startHeartbeat();
+        
+        // Socket bağlandığında log
+        socket.on('connect', () => {
+          console.log('✅ [AuthContext] Socket connected:', socket.id);
+        });
+        
+        socket.on('authenticated', (data) => {
+          console.log('✅ [AuthContext] Socket authenticated:', data);
+        });
       }
       
       setLoading(false);
@@ -116,6 +159,10 @@ export const AuthProvider = ({ children }) => {
     logout,
     isAuthenticated: !!session,
     hasProfile: !!session?.user,
+    incomingRequest,
+    setIncomingRequest,
+    matchNotification,
+    setMatchNotification,
   };
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

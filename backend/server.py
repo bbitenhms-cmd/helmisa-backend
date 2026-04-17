@@ -96,15 +96,19 @@ async def authenticate(sid, data):
         session_id = payload.get('session_id')
         
         # Session'ı güncelle - socket_id ekle
-        await db.sessions.update_one(
+        result = await db.sessions.update_one(
             {"id": session_id},
             {"$set": {"socket_id": sid}}
         )
         
-        logging.info(f"✅ Socket {sid} authenticated for session {session_id}")
-        await sio.emit('authenticated', {'success': True}, room=sid)
+        if result.modified_count > 0:
+            logging.info(f"✅ Socket {sid} authenticated for session {session_id[:8]}...")
+        else:
+            logging.warning(f"⚠️ Session {session_id[:8]}... not found or already had socket_id")
+            
+        await sio.emit('authenticated', {'success': True, 'session_id': session_id}, room=sid)
     except Exception as e:
-        logging.error(f"Authentication failed: {e}")
+        logging.error(f"❌ Authentication failed for socket {sid}: {e}")
         await sio.emit('authenticated', {'success': False, 'error': str(e)}, room=sid)
 
 @sio.event
