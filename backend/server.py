@@ -216,6 +216,32 @@ async def startup_event():
         }
         await db.cafes.insert_one(demo_cafe)
         logger.info("✅ Demo cafe created")
+    
+    # Background task: Otomatik expired session temizliği (her 1 dakika)
+    import asyncio
+    async def cleanup_expired_sessions():
+        while True:
+            try:
+                from datetime import datetime, timezone
+                now = datetime.now(timezone.utc)
+                
+                # Expired session'ları sil
+                result = await db.sessions.delete_many({
+                    "expires_at": {"$lt": now.isoformat()}
+                })
+                
+                if result.deleted_count > 0:
+                    logger.info(f"🗑️ Cleaned up {result.deleted_count} expired sessions")
+                
+            except Exception as e:
+                logger.error(f"Session cleanup error: {e}")
+            
+            # 60 saniye bekle
+            await asyncio.sleep(60)
+    
+    # Background task başlat
+    asyncio.create_task(cleanup_expired_sessions())
+    logger.info("✅ Session cleanup task started (runs every 60 seconds)")
 
 @app.on_event("shutdown")
 async def shutdown_db_client():
