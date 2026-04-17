@@ -62,7 +62,7 @@ app.add_middleware(
 
 # Socket.IO event handlers
 @sio.event
-async def connect(sid, environ):
+async def connect(sid):
     logging.info(f"Client connected: {sid}")
     await sio.emit('connected', {'message': 'Connected to helMisa'}, room=sid)
 
