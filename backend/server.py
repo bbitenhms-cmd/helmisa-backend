@@ -15,12 +15,18 @@ mongo_url = os.environ['MONGO_URL']
 client = AsyncIOMotorClient(mongo_url)
 db = client[os.environ['DB_NAME']]
 
-# Create Socket.IO server
+# Create Socket.IO server with production-ready settings
 sio = socketio.AsyncServer(
     async_mode='asgi',
     cors_allowed_origins='*',
     logger=True,
-    engineio_logger=True
+    engineio_logger=True,
+    ping_timeout=60,
+    ping_interval=25,
+    max_http_buffer_size=1000000,
+    allow_upgrades=True,
+    http_compression=True,
+    compression_threshold=1024
 )
 
 # Create the main FastAPI app

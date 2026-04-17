@@ -30,6 +30,22 @@ async def send_request(data: RequestCreate, current_session = Depends(get_curren
     if target_session["cafe_id"] != current_session.cafe_id:
         raise HTTPException(status_code=400, detail="Target session is not in the same cafe")
     
+    # Son 5 dakika içinde rejected edilmiş teklif var mı?
+    from datetime import timezone
+    five_minutes_ago = datetime.now(timezone.utc) - timedelta(minutes=5)
+    recent_rejected = await db.requests.find_one({
+        "from_session_id": current_session.id,
+        "to_session_id": data.to_session_id,
+        "status": "rejected",
+        "responded_at": {"$gte": five_minutes_ago.isoformat()}
+    })
+    
+    if recent_rejected:
+        raise HTTPException(
+            status_code=429, 
+            detail="Bu kullanıcı son 5 dakika içinde teklifinizi reddetti. Lütfen daha sonra tekrar deneyin."
+        )
+    
     # Zaten bekleyen teklif var mı?
     existing_request = await db.requests.find_one({
         "from_session_id": current_session.id,
@@ -38,7 +54,7 @@ async def send_request(data: RequestCreate, current_session = Depends(get_curren
     })
     
     if existing_request:
-        raise HTTPException(status_code=400, detail="You already have a pending request to this user")
+        raise HTTPException(status_code=400, detail="Bu kullanıcı için zaten bekleyen bir isteğiniz var.")
     
     # Yeni teklif oluştur
     request = Request(
@@ -262,10 +278,11 @@ async def reject_request(request_id: str, current_session = Depends(get_current_
     if request["status"] != "pending":
         raise HTTPException(status_code=400, detail="Request already responded")
     
-    # Reject yap
+    # Reject yap - timezone-aware datetime kullan
+    from datetime import timezone
     await db.requests.update_one(
         {"id": request_id},
-        {"$set": {"status": "rejected", "responded_at": datetime.utcnow().isoformat()}}
+        {"$set": {"status": "rejected", "responded_at": datetime.now(timezone.utc).isoformat()}}
     )
     
     logger.info(f"Request rejected: {request_id}")
