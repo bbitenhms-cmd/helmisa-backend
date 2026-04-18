@@ -2,7 +2,8 @@ fastapi==0.110.1
 uvicorn[standard]==0.25.0
 python-socketio[asyncio]==5.11.1
 redis==5.0.1
-motor==3.3.1
+motor==3.5.1
+pymongo==4.8.2
 python-dotenv==1.2.2
 pydantic==2.12.5
 python-jose[cryptography]==3.3.0
