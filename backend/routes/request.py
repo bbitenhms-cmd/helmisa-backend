@@ -70,81 +70,8 @@ async def send_request(data: RequestCreate, current_session = Depends(get_curren
     
     await db.requests.insert_one(request_dict)
     
-    # Karşı taraftan da teklif var mı kontrol et (MATCH)
-    reverse_request = await db.requests.find_one({
-        "from_session_id": data.to_session_id,
-        "to_session_id": current_session.id,
-        "status": "pending"
-    })
-    
-    if reverse_request:
-        # MATCH! Her iki teklifi de accepted yap
-        await db.requests.update_one(
-            {"id": request.id},
-            {"$set": {"status": "accepted", "responded_at": datetime.utcnow().isoformat()}}
-        )
-        await db.requests.update_one(
-            {"id": reverse_request["id"]},
-            {"$set": {"status": "accepted", "responded_at": datetime.utcnow().isoformat()}}
-        )
-        
-        # Chat oluştur
-        chat = Chat(
-            match_id=f"match_{request.id}_{reverse_request['id']}",
-            cafe_id=current_session.cafe_id,
-            participants=[current_session.id, data.to_session_id]
-        )
-        
-        chat_dict = chat.model_dump()
-        chat_dict['created_at'] = chat_dict['created_at'].isoformat()
-        
-        await db.chats.insert_one(chat_dict)
-        
-        # Match kaydı
-        match = Match(
-            cafe_id=current_session.cafe_id,
-            session_ids=[current_session.id, data.to_session_id],
-            request_ids=[request.id, reverse_request["id"]],
-            chat_id=chat.id
-        )
-        
-        match_dict = match.model_dump()
-        match_dict['created_at'] = match_dict['created_at'].isoformat()
-        
-        await db.matches.insert_one(match_dict)
-        
-        logger.info(f"MATCH created: {match.id} between {current_session.id} and {data.to_session_id}")
-        
-        # Socket.io ile her iki tarafa da bildirim gönder
-        from server import sio
-        
-        # Her iki session'ın socket_id'sini al
-        from_socket = current_session.socket_id
-        to_socket = target_session.get("socket_id")
-        
-        if from_socket:
-            await sio.emit('match_created', {
-                'match_id': match.id,
-                'chat_id': chat.id,
-                'message': "It's a match! 🎉",
-                'other_table': target_session["table_number"]
-            }, room=from_socket)
-        
-        if to_socket:
-            await sio.emit('match_created', {
-                'match_id': match.id,
-                'chat_id': chat.id,
-                'message': "It's a match! 🎉",
-                'other_table': current_session.table_number
-            }, room=to_socket)
-        
-        return {
-            "request": request,
-            "status": "matched",
-            "match": match,
-            "chat_id": chat.id,
-            "message": "It's a match! 🎉"
-        }
+    # ✅ DÜZELTME: Reverse request kontrolünü kaldırdık
+    # Match sadece "İlgileniyorum" (accept) basınca olmalı!
     
     # Karşı tarafa socket.io ile bildirim gönder
     from server import sio
