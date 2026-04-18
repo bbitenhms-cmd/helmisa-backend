@@ -18,9 +18,11 @@ db = client[os.environ['DB_NAME']]
 # Create Socket.IO server
 sio = socketio.AsyncServer(
     async_mode='asgi',
-    cors_allowed_origins='*',
+    cors_allowed_origins=['https://helmisa.app', 'https://helmisa-frontend.vercel.app', 'http://localhost:3000'],
     logger=True,
-    engineio_logger=True
+    engineio_logger=True,
+    ping_timeout=60,
+    ping_interval=25
 )
 
 # Create the main FastAPI app
@@ -29,7 +31,7 @@ app = FastAPI(title="helMisa API", version="1.0.0")
 # Create a router with the /api prefix
 api_router = APIRouter(prefix="/api")
 
-# Import routes
+# Import routers
 from routes import auth, cafe, request, chat, admin
 
 # Basic routes
@@ -62,7 +64,7 @@ app.add_middleware(
 
 # Socket.IO event handlers
 @sio.event
-async def connect(sid):
+async def connect(sid, environ):
     logging.info(f"Client connected: {sid}")
     await sio.emit('connected', {'message': 'Connected to helMisa'}, room=sid)
 
@@ -199,7 +201,7 @@ logger = logging.getLogger(__name__)
 @app.on_event("startup")
 async def startup_event():
     logger.info("🚀 helMisa backend starting...")
-    logger.info(f"📊 Database: {os.environ['DB_NAME']}")
+    logger.info(f"📋 Database: {os.environ['DB_NAME']}")
     logger.info(f"🌐 CORS Origins: {os.environ.get('CORS_ORIGINS', '*')}")
     
     # Initialize default cafe if not exists
@@ -231,7 +233,7 @@ async def startup_event():
                 })
                 
                 if result.deleted_count > 0:
-                    logger.info(f"🗑️ Cleaned up {result.deleted_count} expired sessions")
+                    logger.info(f"🕷️ Cleaned up {result.deleted_count} expired sessions")
                 
             except Exception as e:
                 logger.error(f"Session cleanup error: {e}")
