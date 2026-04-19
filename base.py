@@ -16,6 +16,10 @@ logger = logging.getLogger(__name__)
 # Database Init
 mongo_url = os.environ.get('MONGO_URL')
 db_name = os.environ.get('DB_NAME', 'helmisa')
+
+if not mongo_url:
+    logger.error("❌ MONGO_URL is missing!")
+
 client = AsyncIOMotorClient(mongo_url)
 db = client[db_name]
 
@@ -26,7 +30,7 @@ if redis_url:
     try:
         mgr = socketio.AsyncRedisManager(redis_url)
         logger.info("🔄 Redis Manager connected")
-    exceptException as e:
+    except Exception as e:
         logger.error(f"Redis connection failed: {e}")
 
 sio = socketio.AsyncServer(
