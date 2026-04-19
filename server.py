@@ -5,7 +5,6 @@ from motor.motor_asyncio import AsyncIOMotorClient
 import socketio
 import os
 import logging
-import sys
 from pathlib import Path
 
 ROOT_DIR = Path(__file__).parent
@@ -18,39 +17,22 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# CRITICAL: Check for environment variables before starting
-required_vars = ['MONGO_URL', 'DB_NAME']
-missing_vars = [var for var in required_vars if not os.environ.get(var)]
-
-if missing_vars:
-    logger.error(f"❌ FATAL ERROR: Missing environment variables: {', '.join(missing_vars)}")
-    logger.error("💡 PLEASE ADD THESE TO RAILWAY VARIABLES TAB!")
-    # Don't exit immediately so logs can be read in some environments, but app won't work
-
-# MongoDB connection setup with error handling
+# MongoDB connection setup
 mongo_url = os.environ.get('MONGO_URL')
 db_name = os.environ.get('DB_NAME', 'helmisa')
 
-try:
-    if mongo_url:
-        client = AsyncIOMotorClient(mongo_url)
-        db = client[db_name]
-    else:
-        db = None
-        logger.warning("⚠️ MongoDB client not initialized due to missing URL")
-except Exception as e:
-    logger.error(f"❌ MongoDB Connection Error: {e}")
-    db = None
+if not mongo_url:
+    logger.error("❌ MONGO_URL is not set!")
+
+client = AsyncIOMotorClient(mongo_url)
+db = client[db_name]
 
 # Socket.IO Redis Manager
 mgr = None
 redis_url = os.environ.get('REDIS_URL')
 if redis_url:
-    try:
-        logger.info(f"🔄 Using Redis Manager at {redis_url}")
-        mgr = socketio.AsyncRedisManager(redis_url)
-    except Exception as e:
-        logger.error(f"⚠️ Redis Error: {e}. Falling back to non-redis mode.")
+    logger.info(f"🔄 Using Redis Manager at {redis_url}")
+    mgr = socketio.AsyncRedisManager(redis_url)
 
 # Create Socket.IO server
 sio = socketio.AsyncServer(
@@ -64,21 +46,18 @@ sio = socketio.AsyncServer(
 )
 
 # Create the main FastAPI app
-app = FastAPI(title="helMisa API", version="1.1.0")
+app = FastAPI(title="helMisa API", version="1.1.1")
 
 # Create a router with the /api prefix
 api_router = APIRouter(prefix="/api")
 
-# Import routes after db check to prevent crash on startup
-try:
-    from routes import auth, cafe, request, chat, admin
-    api_router.include_router(auth.router)
-    api_router.include_router(cafe.router)
-    api_router.include_router(request.router)
-    api_router.include_router(chat.router)
-    api_router.include_router(admin.router)
-except Exception as e:
-    logger.error(f"❌ Error loading routes: {e}")
+# Import routes
+from routes import auth, cafe, request, chat, admin
+api_router.include_router(auth.router)
+api_router.include_router(cafe.router)
+api_router.include_router(request.router)
+api_router.include_router(chat.router)
+api_router.include_router(admin.router)
 
 # Include the main router in the app
 app.include_router(api_router)
@@ -101,18 +80,15 @@ async def connect(sid, environ):
 @sio.event
 async def disconnect(sid):
     logger.info(f"Client disconnected: {sid}")
-    if db is not None:
-        try:
-            result = await db.sessions.delete_one({"socket_id": sid})
-            if result.deleted_count > 0:
-                logger.info(f"✅ Session deleted for socket {sid}")
-        except Exception as e:
-            logger.error(f"Error deleting session on disconnect: {e}")
+    try:
+        await db.sessions.delete_one({"socket_id": sid})
+    except Exception as e:
+        logger.error(f"Error deleting session: {e}")
 
 @sio.event
 async def authenticate(sid, data):
     token = data.get('token')
-    if not token or db is None:
+    if not token:
         return
     
     try:
@@ -136,14 +112,29 @@ socket_app = socketio.ASGIApp(sio, app)
 
 @app.on_event("startup")
 async def startup_event():
-    logger.info("🚀 helMisa backend version 1.1.0 starting...")
-    if db is not None:
-        logger.info("✅ Database initialized")
+    logger.info("🚀 helMisa backend version 1.1.1 starting...")
+    
+    # ENSURE DEMO CAFE EXISTS (This fixes the 'Cafe not found' error)
+    demo_cafe_id = "demo-cafe-001"
+    existing_cafe = await db.cafes.find_one({"id": demo_cafe_id})
+    
+    if not existing_cafe:
+        logger.info("💡 Creating demo cafe 'demo-cafe-001'...")
+        demo_cafe = {
+            "id": demo_cafe_id,
+            "name": "helMisa Demo",
+            "address": "Demo Location",
+            "table_count": 20,
+            "location": {"lat": 40.9887, "lng": 29.0258},
+            "qr_base_url": "https://helmisa.app/qr/",
+            "is_active": True
+        }
+        await db.cafes.insert_one(demo_cafe)
+        logger.info("✅ Demo cafe successfully created")
     else:
-        logger.error("❌ Database NOT initialized!")
+        logger.info("✅ Demo cafe already exists")
 
 @app.on_event("shutdown")
 async def shutdown_db_client():
-    if 'client' in globals() and client:
-        client.close()
+    client.close()
     logger.info("👋 helMisa backend shutting down...")
