@@ -1,51 +1,37 @@
 from fastapi import FastAPI, APIRouter
 from fastapi.middleware.cors import CORSMiddleware
-from dotenv import load_dotenv
-from motor.motor_asyncio import AsyncIOMotorClient
 import socketio
-import os
 import logging
-from pathlib import Path
+from base import sio, app as base_app
 
-ROOT_DIR = Path(__file__).parent
-load_dotenv(ROOT_DIR / '.env')
-
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+# Configure logging
 logger = logging.getLogger(__name__)
 
-mongo_url = os.environ.get('MONGO_URL')
-db_name = os.environ.get('DB_NAME', 'helmisa')
+# Create the main FastAPI app
+app = FastAPI(title="helMisa API", version="1.3.0")
 
-client = AsyncIOMotorClient(mongo_url)
-db = client[db_name]
-
-mgr = None
-redis_url = os.environ.get('REDIS_URL')
-if redis_url:
-    mgr = socketio.AsyncRedisManager(redis_url)
-
-sio = socketio.AsyncServer(
-    async_mode='asgi',
-    client_manager=mgr,
-    cors_allowed_origins=['*'],
-    logger=True,
-    engineio_logger=True,
-    ping_timeout=60,
-    ping_interval=25
-)
-
-app = FastAPI(title="helMisa API", version="1.2.0")
-api_router = APIRouter(prefix="/api")
-
+# Import routes and include them
 from routes import auth, cafe, request, chat, admin
+
+api_router = APIRouter(prefix="/api")
 api_router.include_router(auth.router)
 api_router.include_router(cafe.router)
 api_router.include_router(request.router)
 api_router.include_router(chat.router)
 api_router.include_router(admin.router)
 
+# Root & Health
+@api_router.get("/")
+async def root():
+    return {"message": "helMisa API v1.3.0 is Online", "status": "success"}
+
+@api_router.get("/health")
+async def health():
+    return {"status": "healthy"}
+
 app.include_router(api_router)
 
+# CORS
 app.add_middleware(
     CORSMiddleware,
     allow_credentials=True,
@@ -54,10 +40,10 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# --- SOCKET.IO LOGIC BASED ON SPEC ---
+# --- SOCKET.IO HANDLERS ---
 @sio.event
 async def connect(sid, environ):
-    logger.info(f"🔌 Client connected: {sid}")
+    logger.info(f"🔌 Socket Connected: {sid}")
 
 @sio.event
 async def authenticate(sid, data):
@@ -65,11 +51,11 @@ async def authenticate(sid, data):
     if not token: return
     try:
         from utils.auth import verify_token
+        from base import db
         payload = verify_token(token)
         session_id = payload.get('session_id')
         
-        # SPEC: Ensure stable sync by joining a room named after session_id
-        # This ensures notifications reach the user even if socket_id changes
+        # Join specific session room
         await sio.enter_room(sid, f"session_{session_id}")
         
         await db.sessions.update_one(
@@ -77,24 +63,25 @@ async def authenticate(sid, data):
             {"$set": {"socket_id": sid, "is_online": True}}
         )
         
-        logger.info(f"✅ User authenticated. Joined room: session_{session_id}")
+        logger.info(f"✅ Session {session_id} joined room")
         await sio.emit('authenticated', {'success': True}, room=sid)
     except Exception as e:
-        logger.error(f"Socket auth error: {e}")
+        logger.error(f"Auth error: {e}")
 
 @sio.event
 async def disconnect(sid):
-    logger.info(f"📴 Client disconnected: {sid}")
-    # Optionally handle offline state here based on spec
+    logger.info(f"📴 Socket Disconnected: {sid}")
 
+# Combine into ASGI App
 socket_app = socketio.ASGIApp(sio, app)
 
 @app.on_event("startup")
 async def startup_event():
-    # Ensure Demo Cafe
+    from base import db
     cid = "demo-cafe-001"
     if not await db.cafes.find_one({"id": cid}):
         await db.cafes.insert_one({
             "id": cid, "name": "helMisa Demo", "address": "Railway",
             "table_count": 20, "location": {"lat": 0, "lng": 0}, "is_active": True
         })
+        logger.info("✅ Demo Cafe Initialized")
