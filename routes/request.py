@@ -1,5 +1,5 @@
 from fastapi import APIRouter, HTTPException, Depends
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import List
 import logging
 
@@ -7,7 +7,7 @@ from models.request import Request, RequestCreate
 from models.match import Match
 from models.chat import Chat
 from routes.auth import get_current_session
-from server import db
+from server import db, sio
 
 router = APIRouter(prefix="/requests", tags=["Requests"])
 logger = logging.getLogger(__name__)
@@ -15,203 +15,90 @@ logger = logging.getLogger(__name__)
 @router.post("/send")
 async def send_request(data: RequestCreate, current_session = Depends(get_current_session)):
     """
-    Kahve teklifi gönder
+    SPEC: Same user -> same user duplicate check
     """
-    # Hedef session'ı kontrol et
     target_session = await db.sessions.find_one({"id": data.to_session_id}, {"_id": 0})
     if not target_session:
         raise HTTPException(status_code=404, detail="Target session not found")
     
-    # Kendi kendine teklif gönderemez
     if data.to_session_id == current_session.id:
         raise HTTPException(status_code=400, detail="Cannot send request to yourself")
-    
-    # Aynı cafe'de mi kontrol et
-    if target_session["cafe_id"] != current_session.cafe_id:
-        raise HTTPException(status_code=400, detail="Target session is not in the same cafe")
-    
-    # Son 5 dakika içinde rejected edilmiş teklif var mı?
-    from datetime import timezone
-    five_minutes_ago = datetime.now(timezone.utc) - timedelta(minutes=5)
-    recent_rejected = await db.requests.find_one({
-        "from_session_id": current_session.id,
-        "to_session_id": data.to_session_id,
-        "status": "rejected",
-        "responded_at": {"$gte": five_minutes_ago.isoformat()}
-    })
-    
-    if recent_rejected:
-        raise HTTPException(
-            status_code=429, 
-            detail="Bu kullanıcı son 5 dakika içinde teklifinizi reddetti. Lütfen daha sonra tekrar deneyin."
-        )
-    
-    # Zaten bekleyen teklif var mı?
-    existing_request = await db.requests.find_one({
+
+    # SPEC: Check for existing pending request (Idempotency)
+    existing = await db.requests.find_one({
         "from_session_id": current_session.id,
         "to_session_id": data.to_session_id,
         "status": "pending"
     })
-    
-    if existing_request:
-        raise HTTPException(status_code=400, detail="Bu kullanıcı için zaten bekleyen bir isteğiniz var.")
-    
-    # Yeni teklif oluştur
+    if existing:
+        raise HTTPException(status_code=400, detail="A request is already pending for this user")
+
+    # Create Request
     request = Request(
         cafe_id=current_session.cafe_id,
         from_session_id=current_session.id,
         to_session_id=data.to_session_id
     )
     
-    # Kaydet
     request_dict = request.model_dump()
     request_dict['created_at'] = request_dict['created_at'].isoformat()
     request_dict['expires_at'] = request_dict['expires_at'].isoformat()
     
     await db.requests.insert_one(request_dict)
-    
-    # ✅ DÜZELTME: Reverse request kontrolünü kaldırdık
-    # Match sadece "İlgileniyorum" (accept) basınca olmalı!
-    
-    # Karşı tarafa socket.io ile bildirim gönder
-    from server import sio
-    
-    target_socket_id = target_session.get("socket_id")
-    if target_socket_id:
-        # Gönderen bilgilerini ekle
-        await sio.emit('coffee_request', {
-            'id': request.id,
-            'from_session_id': current_session.id,
-            'from_table': current_session.table_number,
-            'from_user': current_session.user,
-            'expires_at': request.expires_at.isoformat()
-        }, room=target_socket_id)
-        logger.info(f"☕ Coffee request sent to socket {target_socket_id} (session: {data.to_session_id})")
-    else:
-        logger.warning(f"⚠️ Target session {data.to_session_id} has no socket_id - notification not sent")
-    
-    return {
-        "request": request,
-        "status": "sent",
-        "message": "Coffee request sent!"
-    }
+
+    # SPEC: Send notification to the target's SESSION ROOM (not socket_id)
+    # This is the most reliable way as socket_id can change on refresh
+    await sio.emit('coffee_request', {
+        'id': request.id,
+        'from_session_id': current_session.id,
+        'from_table': current_session.table_number,
+        'from_user': current_session.user,
+        'expires_at': request.expires_at.isoformat()
+    }, room=f"session_{data.to_session_id}")
+
+    logger.info(f"📧 Coffee request sent to room: session_{data.to_session_id}")
+
+    return {"request": request, "status": "sent"}
 
 @router.get("/incoming")
 async def get_incoming_requests(current_session = Depends(get_current_session)):
-    """
-    Gelen kahve teklifleri
-    """
     requests = await db.requests.find({
         "to_session_id": current_session.id,
         "status": "pending"
     }, {"_id": 0}).to_list(100)
     
-    # Sender bilgilerini ekle
     for req in requests:
-        sender_session = await db.sessions.find_one({"id": req["from_session_id"]}, {"_id": 0, "token": 0, "socket_id": 0})
-        req["sender"] = sender_session
-    
-    return {"requests": requests, "count": len(requests)}
-
-@router.get("/outgoing")
-async def get_outgoing_requests(current_session = Depends(get_current_session)):
-    """
-    Giden kahve teklifleri
-    """
-    requests = await db.requests.find({
-        "from_session_id": current_session.id,
-        "status": "pending"
-    }, {"_id": 0}).to_list(100)
-    
-    # Receiver bilgilerini ekle
-    for req in requests:
-        receiver_session = await db.sessions.find_one({"id": req["to_session_id"]}, {"_id": 0, "token": 0, "socket_id": 0})
-        req["receiver"] = receiver_session
+        sender = await db.sessions.find_one({"id": req["from_session_id"]}, {"_id": 0, "token": 0, "socket_id": 0})
+        req["sender"] = sender
     
     return {"requests": requests, "count": len(requests)}
 
 @router.post("/{request_id}/accept")
 async def accept_request(request_id: str, current_session = Depends(get_current_session)):
-    """
-    Teklifi kabul et
-    """
-    # Request'i bul
     request = await db.requests.find_one({"id": request_id}, {"_id": 0})
-    if not request:
+    if not request or request["to_session_id"] != current_session.id:
         raise HTTPException(status_code=404, detail="Request not found")
     
-    # Bu kullanıcıya gelen teklif mi?
-    if request["to_session_id"] != current_session.id:
-        raise HTTPException(status_code=403, detail="This request is not for you")
-    
-    # Zaten yanıtlanmış mı?
     if request["status"] != "pending":
         raise HTTPException(status_code=400, detail="Request already responded")
-    
-    # Accept yap
-    await db.requests.update_one(
-        {"id": request_id},
-        {"$set": {"status": "accepted", "responded_at": datetime.utcnow().isoformat()}}
-    )
-    
-    # Chat oluştur
-    chat = Chat(
-        match_id=f"match_{request_id}",
-        cafe_id=request["cafe_id"],
-        participants=[request["from_session_id"], current_session.id]
-    )
-    
-    chat_dict = chat.model_dump()
-    chat_dict['created_at'] = chat_dict['created_at'].isoformat()
-    
-    await db.chats.insert_one(chat_dict)
-    
-    # Match kaydı
-    match = Match(
-        cafe_id=request["cafe_id"],
-        session_ids=[request["from_session_id"], current_session.id],
-        request_ids=[request_id],
-        chat_id=chat.id
-    )
-    
-    match_dict = match.model_dump()
-    match_dict['created_at'] = match_dict['created_at'].isoformat()
-    
-    await db.matches.insert_one(match_dict)
-    
-    logger.info(f"Request accepted: {request_id}, Match: {match.id}, Chat: {chat.id}")
-    
-    return {
-        "message": "Request accepted!",
-        "match": match,
-        "chat_id": chat.id
-    }
+
+    # Update status
+    await db.requests.update_one({"id": request_id}, {"$set": {"status": "accepted", "responded_at": datetime.now(timezone.utc).isoformat()}})
+
+    # Create Chat & Match (Logic remains same but ensures single Chat ID)
+    chat = Chat(match_id=f"match_{request_id}", cafe_id=request["cafe_id"], participants=[request["from_session_id"], current_session.id])
+    await db.chats.insert_one(chat.model_dump())
+
+    match = Match(cafe_id=request["cafe_id"], session_ids=[request["from_session_id"], current_session.id], request_ids=[request_id], chat_id=chat.id)
+    await db.matches.insert_one(match.model_dump())
+
+    # SPEC: Notify both parties through their session rooms
+    await sio.emit('match_created', {"chat_id": chat.id, "message": "It's a Match!"}, room=f"session_{request['from_session_id']}")
+    await sio.emit('match_created', {"chat_id": chat.id, "message": "It's a Match!"}, room=f"session_{current_session.id}")
+
+    return {"chat_id": chat.id, "match": match}
 
 @router.post("/{request_id}/reject")
 async def reject_request(request_id: str, current_session = Depends(get_current_session)):
-    """
-    Teklifi reddet
-    """
-    # Request'i bul
-    request = await db.requests.find_one({"id": request_id}, {"_id": 0})
-    if not request:
-        raise HTTPException(status_code=404, detail="Request not found")
-    
-    # Bu kullanıcıya gelen teklif mi?
-    if request["to_session_id"] != current_session.id:
-        raise HTTPException(status_code=403, detail="This request is not for you")
-    
-    # Zaten yanıtlanmış mı?
-    if request["status"] != "pending":
-        raise HTTPException(status_code=400, detail="Request already responded")
-    
-    # Reject yap - timezone-aware datetime kullan
-    from datetime import timezone
-    await db.requests.update_one(
-        {"id": request_id},
-        {"$set": {"status": "rejected", "responded_at": datetime.now(timezone.utc).isoformat()}}
-    )
-    
-    logger.info(f"Request rejected: {request_id}")
-    
+    await db.requests.update_one({"id": request_id}, {"$set": {"status": "rejected", "responded_at": datetime.now(timezone.utc).isoformat()}})
     return {"message": "Request rejected"}
