@@ -5,6 +5,7 @@ from motor.motor_asyncio import AsyncIOMotorClient
 import socketio
 import os
 import logging
+import sys
 from pathlib import Path
 
 ROOT_DIR = Path(__file__).parent
@@ -17,17 +18,39 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# MongoDB connection
-mongo_url = os.environ['MONGO_URL']
-client = AsyncIOMotorClient(mongo_url)
-db = client[os.environ['DB_NAME']]
+# CRITICAL: Check for environment variables before starting
+required_vars = ['MONGO_URL', 'DB_NAME']
+missing_vars = [var for var in required_vars if not os.environ.get(var)]
 
-# Socket.IO Redis Manager for cross-instance communication
+if missing_vars:
+    logger.error(f"❌ FATAL ERROR: Missing environment variables: {', '.join(missing_vars)}")
+    logger.error("💡 PLEASE ADD THESE TO RAILWAY VARIABLES TAB!")
+    # Don't exit immediately so logs can be read in some environments, but app won't work
+
+# MongoDB connection setup with error handling
+mongo_url = os.environ.get('MONGO_URL')
+db_name = os.environ.get('DB_NAME', 'helmisa')
+
+try:
+    if mongo_url:
+        client = AsyncIOMotorClient(mongo_url)
+        db = client[db_name]
+    else:
+        db = None
+        logger.warning("⚠️ MongoDB client not initialized due to missing URL")
+except Exception as e:
+    logger.error(f"❌ MongoDB Connection Error: {e}")
+    db = None
+
+# Socket.IO Redis Manager
 mgr = None
 redis_url = os.environ.get('REDIS_URL')
 if redis_url:
-    logger.info(f"🔄 Using Redis Manager at {redis_url}")
-    mgr = socketio.AsyncRedisManager(redis_url)
+    try:
+        logger.info(f"🔄 Using Redis Manager at {redis_url}")
+        mgr = socketio.AsyncRedisManager(redis_url)
+    except Exception as e:
+        logger.error(f"⚠️ Redis Error: {e}. Falling back to non-redis mode.")
 
 # Create Socket.IO server
 sio = socketio.AsyncServer(
@@ -41,29 +64,21 @@ sio = socketio.AsyncServer(
 )
 
 # Create the main FastAPI app
-app = FastAPI(title="helMisa API", version="1.0.0")
+app = FastAPI(title="helMisa API", version="1.1.0")
 
 # Create a router with the /api prefix
 api_router = APIRouter(prefix="/api")
 
-# Import routers
-from routes import auth, cafe, request, chat, admin
-
-# Basic routes
-@api_router.get("/")
-async def root():
-    return {"message": "helMisa API is running", "version": "1.0.0"}
-
-@api_router.get("/health")
-async def health_check():
-    return {"status": "healthy", "database": "connected", "redis": "connected" if redis_url else "not configured"}
-
-# Include routers
-api_router.include_router(auth.router)
-api_router.include_router(cafe.router)
-api_router.include_router(request.router)
-api_router.include_router(chat.router)
-api_router.include_router(admin.router)
+# Import routes after db check to prevent crash on startup
+try:
+    from routes import auth, cafe, request, chat, admin
+    api_router.include_router(auth.router)
+    api_router.include_router(cafe.router)
+    api_router.include_router(request.router)
+    api_router.include_router(chat.router)
+    api_router.include_router(admin.router)
+except Exception as e:
+    logger.error(f"❌ Error loading routes: {e}")
 
 # Include the main router in the app
 app.include_router(api_router)
@@ -86,18 +101,18 @@ async def connect(sid, environ):
 @sio.event
 async def disconnect(sid):
     logger.info(f"Client disconnected: {sid}")
-    try:
-        result = await db.sessions.delete_one({"socket_id": sid})
-        if result.deleted_count > 0:
-            logger.info(f"✅ Session deleted for socket {sid}")
-    except Exception as e:
-        logger.error(f"Error deleting session on disconnect: {e}")
+    if db is not None:
+        try:
+            result = await db.sessions.delete_one({"socket_id": sid})
+            if result.deleted_count > 0:
+                logger.info(f"✅ Session deleted for socket {sid}")
+        except Exception as e:
+            logger.error(f"Error deleting session on disconnect: {e}")
 
 @sio.event
 async def authenticate(sid, data):
     token = data.get('token')
-    if not token:
-        logger.warning(f"Authentication failed: No token provided for socket {sid}")
+    if not token or db is None:
         return
     
     try:
@@ -113,107 +128,22 @@ async def authenticate(sid, data):
         logger.info(f"✅ Socket {sid} authenticated for session {session_id}")
         await sio.emit('authenticated', {'success': True}, room=sid)
     except Exception as e:
-        logger.error(f"Authentication failed for socket {sid}: {e}")
+        logger.error(f"Authentication failed: {e}")
         await sio.emit('authenticated', {'success': False, 'error': str(e)}, room=sid)
-
-@sio.event
-async def heartbeat(sid, data):
-    from datetime import datetime, timezone
-    try:
-        await db.sessions.update_one(
-            {"socket_id": sid},
-            {"$set": {"last_heartbeat": datetime.now(timezone.utc).isoformat()}}
-        )
-    except Exception as e:
-        logger.error(f"Heartbeat update error for socket {sid}: {e}")
-    
-    await sio.emit('heartbeat_ack', {'timestamp': data.get('timestamp')}, room=sid)
-
-@sio.event
-async def join_chat(sid, data):
-    chat_id = data.get('chat_id')
-    await sio.enter_room(sid, f"chat_{chat_id}")
-    logger.info(f"User {sid} joined chat room: chat_{chat_id}")
-
-@sio.event
-async def leave_chat(sid, data):
-    chat_id = data.get('chat_id')
-    await sio.leave_room(sid, f"chat_{chat_id}")
-    logger.info(f"User {sid} left chat room: chat_{chat_id}")
-
-@sio.event
-async def send_message(sid, data):
-    chat_id = data.get('chat_id')
-    message = data.get('message')
-    await sio.emit('new_message', {
-        'chat_id': chat_id,
-        'message': message
-    }, room=f"chat_{chat_id}", skip_sid=sid)
-    logger.info(f"Message sent in chat {chat_id} from socket {sid}")
-
-@sio.event
-async def typing_start(sid, data):
-    chat_id = data.get('chat_id')
-    sender_id = data.get('sender_id')
-    await sio.emit('user_typing', {
-        'chat_id': chat_id,
-        'sender_id': sender_id,
-        'typing': True
-    }, room=f"chat_{chat_id}", skip_sid=sid)
-
-@sio.event
-async def typing_stop(sid, data):
-    chat_id = data.get('chat_id')
-    sender_id = data.get('sender_id')
-    await sio.emit('user_typing', {
-        'chat_id': chat_id,
-        'sender_id': sender_id,
-        'typing': False
-    }, room=f"chat_{chat_id}", skip_sid=sid)
 
 # Combine FastAPI and Socket.IO
 socket_app = socketio.ASGIApp(sio, app)
 
 @app.on_event("startup")
 async def startup_event():
-    logger.info("🚀 helMisa backend starting...")
-    logger.info(f"📋 Database: {os.environ['DB_NAME']}")
-    
-    # Initialize default cafe if not exists
-    existing_cafe = await db.cafes.find_one({"name": "helMisa Demo"})
-    if not existing_cafe:
-        demo_cafe = {
-            "id": "demo-cafe-001",
-            "name": "helMisa Demo",
-            "address": "Demo Location",
-            "table_count": 20,
-            "location": {"lat": 40.9887, "lng": 29.0258},
-            "qr_base_url": f"{os.environ.get('FRONTEND_URL', 'http://localhost:3000')}/qr/",
-            "is_active": True
-        }
-        await db.cafes.insert_one(demo_cafe)
-        logger.info("✅ Demo cafe created")
-    
-    # Background task: Otomatik expired session temizliği
-    import asyncio
-    async def cleanup_expired_sessions():
-        while True:
-            try:
-                from datetime import datetime, timezone
-                now = datetime.now(timezone.utc)
-                result = await db.sessions.delete_many({
-                    "expires_at": {"$lt": now.isoformat()}
-                })
-                if result.deleted_count > 0:
-                    logger.info(f"🕷️ Cleaned up {result.deleted_count} expired sessions")
-            except Exception as e:
-                logger.error(f"Session cleanup error: {e}")
-            await asyncio.sleep(60)
-    
-    asyncio.create_task(cleanup_expired_sessions())
-    logger.info("✅ Session cleanup task started")
+    logger.info("🚀 helMisa backend version 1.1.0 starting...")
+    if db is not None:
+        logger.info("✅ Database initialized")
+    else:
+        logger.error("❌ Database NOT initialized!")
 
 @app.on_event("shutdown")
 async def shutdown_db_client():
-    client.close()
+    if 'client' in globals() and client:
+        client.close()
     logger.info("👋 helMisa backend shutting down...")
