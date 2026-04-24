@@ -2,13 +2,13 @@ from fastapi import FastAPI, APIRouter
 from fastapi.middleware.cors import CORSMiddleware
 import socketio
 import logging
-from base import sio, app as base_app
+from base import sio
 
 # Configure logging
 logger = logging.getLogger(__name__)
 
 # Create the main FastAPI app
-app = FastAPI(title="helMisa API", version="1.3.0")
+app = FastAPI(title="helMisa API", version="1.3.1")
 
 # Import routes and include them
 from routes import auth, cafe, request, chat, admin
@@ -23,7 +23,7 @@ api_router.include_router(admin.router)
 # Root & Health
 @api_router.get("/")
 async def root():
-    return {"message": "helMisa API v1.3.0 is Online", "status": "success"}
+    return {"message": "helMisa API v1.3.1 is Online", "status": "success"}
 
 @api_router.get("/health")
 async def health():
@@ -78,10 +78,12 @@ socket_app = socketio.ASGIApp(sio, app)
 @app.on_event("startup")
 async def startup_event():
     from base import db
-    cid = "demo-cafe-001"
-    if not await db.cafes.find_one({"id": cid}):
-        await db.cafes.insert_one({
-            "id": cid, "name": "helMisa Demo", "address": "Railway",
-            "table_count": 20, "location": {"lat": 0, "lng": 0}, "is_active": True
-        })
-        logger.info("✅ Demo Cafe Initialized")
+    # Ensure multiple cafe IDs for better matching
+    cafe_ids = ["demo-cafe-001", "demo-cafe", "test-cafe"]
+    for cid in cafe_ids:
+        if not await db.cafes.find_one({"id": cid}):
+            await db.cafes.insert_one({
+                "id": cid, "name": "helMisa Demo", "address": "Railway",
+                "table_count": 50, "location": {"lat": 0, "lng": 0}, "is_active": True
+            })
+    logger.info("✅ Cafes Initialized")
